@@ -1,0 +1,77 @@
+#!/bin/bash
+
+#       Check Crashplan Pro Currency - GNU
+#       Originally by Jedda Wignall
+#       http://jedda.me
+#       https://github.com/jedda/OSX-Monitoring-Tools/blob/master/check_crashplan_currency_gnu.sh
+
+#       Modified to work with CrashPlan Pro by Jordan
+#       http://geektank.net
+
+#       v1.02 - 1 April 2013 - Jordan
+#       Updated to work with CrashPlan Pro.
+#       Added Timezone Support.
+
+#       v1.0.1 - 3 May 2012 - Jedda
+#       Added comments and fixed broken bits.
+
+#       v1.0 - 27 Apr 2012 - Jedda
+#       Initial release.
+
+#       This script checks the currency of a CrashPlan Pro backup on Linux.
+#       Takes three arguments
+#               [-d] cp.properties file in backup destination,
+#               [-w] warning threshold in minutes,
+#               [-c] critical threshold in minutes):
+#
+#       ./check_crashplan_pro.sh -d /media/Backups/52352423423424243/cp.properties -w 240 -c 1440
+
+# Configuration Defaults
+
+cpDirectory="/usr/local/crashplan"
+warnMinutes="360"
+critMinutes="720"
+
+timeZone=`date | awk '{ print $5 }'`
+currentDate=`date "+%s"`
+
+while getopts "d:w:c:" optionName; do
+case "$optionName" in
+d) cpDirectory=("$OPTARG");;
+w) warnMinutes=( $OPTARG );;
+c) critMinutes=( $OPTARG );;
+esac
+done
+
+
+# check to see if the cp.properties file exists
+if ! [ -f "$cpDirectory" ];
+then
+        printf "CRITICAL - the CrashPlan backup you pointed to does not exist! - $cpDirectory\n"
+        exit 2
+fi
+
+lastBackupLine=`grep -n lastCompletedBackupTimestamp_1 "$cpDirectory"`
+if [ -z "$lastBackupLine" ]; then
+        printf "CRITICAL - Could not read the last backup date. Has an initial backup occurred?\n"
+        exit 2
+fi
+lastBackupDateString=`echo $lastBackupLine | awk -F "lastCompletedBackupTimestamp_1=" '{print $NF}' | sed 's/.\{5\}$//' | sed 's/\\\//g' |  sed 's/T/ /g'`
+lastBackupDate=$(date -d "$lastBackupDateString $timeZone" "+%s" )
+
+diff=$(( $currentDate - $lastBackupDate))
+warnSeconds=$(($warnMinutes * 60))
+critSeconds=$(($critMinutes * 60))
+
+if [ "$diff" -gt "$critSeconds" ]; then
+        # this cert is has already expired! return critical status.
+        printf "CRITICAL - $cpDirectory has not been backed up in more than $critMinutes minutes!\n"
+        exit 2
+elif [ "$diff" -gt "$warnSeconds" ]; then
+        # this cert is expiring within the warning threshold. return warning status.
+        printf "WARNING - $cpDirectory has not been backed up in more than $warnMinutes minutes!\n"
+        exit 1
+fi
+
+printf "OK - $cpDirectory has been backed up within the last $warnMinutes minutes.\n"
+exit 0
